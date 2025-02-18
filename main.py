@@ -54,6 +54,7 @@ def run_episode(env, policy, writer=None):
 
         # Execute valid action on robot
         if isinstance(action, dict):
+            print(obs['arm_pos'], action['arm_pos'])
             env.step(action)
 
             if writer is not None and not episode_ended:
@@ -82,7 +83,10 @@ def run_episode(env, policy, writer=None):
 def main(args):
     # Create env
     if args.sim:
-        from mujoco_env import MujocoEnv
+        if args.wbc:
+            from mujoco_env_wbc import MujocoEnv
+        else:
+            from mujoco_env import MujocoEnv
         if args.teleop:
             env = MujocoEnv(show_images=True)
         else:
@@ -107,6 +111,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--sim', action='store_true')
+    parser.add_argument('--wbc', action='store_true')
     parser.add_argument('--teleop', action='store_true')
     parser.add_argument('--save', action='store_true')
     parser.add_argument('--output-dir', default='data/demos')
