@@ -119,8 +119,8 @@ class ArmController:
 
     def reset(self):
         # Initialize arm in "retract" configuration
-        self.qpos[:] = np.array([0.0, -0.34906585, 3.14159265, -2.54818071, 0.0, -0.87266463, 1.57079633]) # RETRACT
-        #self.qpos[:] = np.array([0.0, 0.26179939, 3.14159265, -2.26892803, 0.0, 0.95993109, 1.57079633]) # HOME 
+        self.qpos[:] = np.array([0.0, -0.34906585, 3.14159265, -2.54818071, 0.0, -0.87266463, 1.57079633]) # retract
+        #self.qpos[:] = np.array([0.0, 0.26179939, 3.14159265, -2.26892803, 0.0, 0.95993109, 1.57079633]) # home
         self.ctrl[:] = self.qpos
         self.ctrl_gripper[:] = 0.0
 
@@ -217,8 +217,6 @@ class MujocoSim:
         self.posture_task.set_target_from_configuration(self.configuration)
 
     def control_callback(self, *_):
-        print(self.configuration.q)
-
         # Check for new command
         command = None if self.command_queue.empty() else self.command_queue.get()
 
