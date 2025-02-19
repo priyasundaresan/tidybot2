@@ -412,7 +412,7 @@ if __name__ == '__main__':
         while True:
             env.reset()
             random_pos = 0.1 * np.random.rand(3) + np.array([0.55, 0, 0.4])
-            random_quat = np.random.uniform(-0.2, 0.2, 4) + [np.sqrt(2)/2, np.sqrt(2)/2, 0.0, 0.0]
+            random_quat = np.random.uniform(-0.4, 0.4, 4) + [np.sqrt(2)/2, np.sqrt(2)/2, 0.0, 0.0]
             random_quat = random_quat/np.linalg.norm(random_quat)
 
             for _ in range(30):
