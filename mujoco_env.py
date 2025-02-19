@@ -420,27 +420,16 @@ if __name__ == '__main__':
     try:
         while True:
             env.reset()
-            random_pos = 0.1 * np.random.rand(3) + np.array([0.55, 0.0, 0.4])
-            random_quat = np.random.uniform(-0.5, 0.5, 4) + [np.sqrt(2)/2, np.sqrt(2)/2, 0.0, 0.0]
-            random_quat = random_quat/np.linalg.norm(random_quat)
-            random_gripper_pos = np.random.rand(1)
-
             for _ in range(100):
-                #action = {
-                #    'base_pose': 0.1 * np.random.rand(3) - 0.05,
-                #    'arm_pos': 0.1 * np.random.rand(3) + np.array([0.55, 0.0, 0.4]),
-                #    'arm_quat': np.random.rand(4),
-                #    'gripper_pos': np.random.rand(1),
-                #}
                 action = {
-                    'base_pose': np.zeros(3), # No base pos, handled by WBC
-                    'arm_pos': random_pos + np.random.uniform(-0.05, 0.05, 3), 
-                    'arm_quat': random_quat,
-                    'gripper_pos': random_gripper_pos,
+                    'base_pose': 0.1 * np.random.rand(3) - 0.05,
+                    'arm_pos': 0.1 * np.random.rand(3) + np.array([0.55, 0.0, 0.4]),
+                    'arm_quat': np.random.rand(4),
+                    'gripper_pos': np.random.rand(1),
                 }
                 env.step(action)
                 obs = env.get_obs()
-                #print([(k, v.shape) if v.ndim == 3 else (k, v) for (k, v) in obs.items()])
+                print([(k, v.shape) if v.ndim == 3 else (k, v) for (k, v) in obs.items()])
                 time.sleep(POLICY_CONTROL_PERIOD)  # Note: Not precise
     finally:
         env.close()
