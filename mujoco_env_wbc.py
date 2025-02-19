@@ -156,8 +156,8 @@ class ArmController:
         self.otg_res = None
 
     def reset(self):
-        retract_qpos = np.array([0.0, -0.349, 3.141, -2.548, 0.0, -0.872, 1.570])
-        self.qpos[:] = retract_qpos
+        # Initialize arm in "retract" configuration
+        self.qpos[:] = np.array([0.0, -0.34906585, 3.14159265, -2.54818071, 0.0, -0.87266463, 1.57079633])
         self.ctrl[:] = self.qpos
         self.ctrl_gripper[:] = 0.0
 

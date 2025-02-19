@@ -217,12 +217,12 @@ class MujocoSim:
                 self.model.body_gravcomp[self.model.body(object_name).id] = 0.0
 
         # Cache references to array slices
-        base_dofs = self.model.body('base_link').jntnum.item()
-        arm_dofs = 7
+        self.base_dofs = base_dofs = self.model.body('base_link').jntnum.item()
+        self.arm_dofs = arm_dofs = 7
         self.qpos_base = self.data.qpos[:base_dofs]
         qvel_base = self.data.qvel[:base_dofs]
         ctrl_base = self.data.ctrl[:base_dofs]
-        qpos_arm = self.data.qpos[base_dofs:(base_dofs + arm_dofs)]
+        self.qpos_arm = self.data.qpos[base_dofs:(base_dofs + arm_dofs)]
         qvel_arm = self.data.qvel[base_dofs:(base_dofs + arm_dofs)]
         ctrl_arm = self.data.ctrl[base_dofs:(base_dofs + arm_dofs)]
         self.qpos_gripper = self.data.qpos[(base_dofs + arm_dofs):(base_dofs + arm_dofs + 1)]
@@ -231,7 +231,7 @@ class MujocoSim:
 
         # Controllers
         self.base_controller = BaseController(self.qpos_base, qvel_base, ctrl_base, self.model.opt.timestep)
-        self.arm_controller = ArmController(qpos_arm, qvel_arm, ctrl_arm, self.qpos_gripper, ctrl_gripper, self.model.opt.timestep)
+        self.arm_controller = ArmController(self.qpos_arm, qvel_arm, ctrl_arm, self.qpos_gripper, ctrl_gripper, self.model.opt.timestep)
 
         # Shared memory state for observations
         self.shm_state = ShmState(existing_instance=shm_state)
@@ -420,16 +420,21 @@ if __name__ == '__main__':
     try:
         while True:
             env.reset()
-            for _ in range(100):
+            random_pos = 0.1 * np.random.rand(3) + np.array([0.55, 0, 0.4])
+            random_quat = np.random.uniform(-0.4, 0.4, 4) + [np.sqrt(2)/2, np.sqrt(2)/2, 0.0, 0.0]
+            random_quat = random_quat/np.linalg.norm(random_quat)
+
+            for _ in range(30):
                 action = {
-                    'base_pose': 0.1 * np.random.rand(3) - 0.05,
-                    'arm_pos': 0.1 * np.random.rand(3) + np.array([0.55, 0.0, 0.4]),
-                    'arm_quat': np.random.rand(4),
-                    'gripper_pos': np.random.rand(1),
+                    'base_pose': np.zeros(3), # No base pos, handled by WBC
+                    'arm_pos': random_pos + np.random.uniform(-0.05, 0.05, 3), 
+                    'arm_quat': random_quat,
+                    'gripper_pos': np.random.rand(1)
                 }
                 env.step(action)
                 obs = env.get_obs()
-                print([(k, v.shape) if v.ndim == 3 else (k, v) for (k, v) in obs.items()])
+                
+                #print([(k, v.shape) if v.ndim == 3 else (k, v) for (k, v) in obs.items()])
                 time.sleep(POLICY_CONTROL_PERIOD)  # Note: Not precise
     finally:
         env.close()
