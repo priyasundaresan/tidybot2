@@ -145,7 +145,6 @@ class ArmController:
         self.qpos_gripper = qpos_gripper
         self.ctrl_gripper = ctrl_gripper
 
-        self.ik_solver = IKSolver()
 
         num_dofs = 7
         self.last_command_time = None
@@ -197,6 +196,8 @@ class MujocoSim:
         self.command_queue = command_queue
         self.show_viewer = show_viewer
 
+        self.wbc_ik_solver = IKSolver()
+
         self.model.body_gravcomp[:] = 1.0
 
         body_names = {self.model.body(i).name for i in range(self.model.nbody)}
@@ -232,7 +233,6 @@ class MujocoSim:
 
         self.reset()
 
-        self.last_command = None
 
         mujoco.set_mjcb_control(self.control_callback)
 
@@ -248,7 +248,7 @@ class MujocoSim:
         self.base_controller.reset()
         self.arm_controller.reset()
 
-        self.arm_controller.ik_solver.configuration.update(self.data.qpos[:-7])
+        self.wbc_ik_solver.configuration.update(self.data.qpos[:-7])
 
     def control_callback(self, *_):
         command = None if self.command_queue.empty() else self.command_queue.get()
@@ -256,14 +256,13 @@ class MujocoSim:
             self.reset()
 
         if command is not None and 'arm_pos' in command:
-            full_qpos = self.arm_controller.ik_solver.solve(
+            full_qpos = self.wbc_ik_solver.solve(
                 command['arm_pos'], command['arm_quat'], np.hstack([self.qpos_base, self.qpos_arm, np.zeros(8)])
             )
 
             # Distribute to base and arm controllers
             command['base_pose'] = full_qpos[:3]
             command['arm_qpos'] = full_qpos[3:10]
-            self.last_command = command
 
         self.base_controller.control_callback(command)
         self.arm_controller.control_callback(command)
