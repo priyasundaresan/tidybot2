@@ -179,6 +179,30 @@ class MujocoSim:
             orientation_cost=1.0,
             lm_damping=1.0,
         )
+
+        # Base and arm velocity limits
+        self.max_base_velocity = np.array([0.5, 0.5, np.pi/2])  # (x, y, yaw)
+        self.max_arm_velocity = np.array([math.radians(80)] * 4 + [math.radians(140)] * 3)
+        
+        # Create a dictionary mapping joint names to velocity limits
+        joint_names = [
+            "joint_x",
+            "joint_y",
+            "joint_th",
+            "joint_1",
+            "joint_2",
+            "joint_3",
+            "joint_4",
+            "joint_5",
+            "joint_6",
+            "joint_7",
+        ]
+        velocity_limits = {name: limit for name, limit in zip(joint_names, np.concatenate([self.max_base_velocity, self.max_arm_velocity]))}
+        self.velocity_limit = mink.VelocityLimit(self.model, velocity_limits)
+        self.position_limit = mink.ConfigurationLimit(self.model)
+
+        self.limits = [self.velocity_limit, self.position_limit]
+
         self.posture_cost = np.zeros((self.model.nv,))
         self.posture_cost[3:] = 1e-3
         self.posture_task = mink.PostureTask(self.model, cost=self.posture_cost)
@@ -188,7 +212,7 @@ class MujocoSim:
         self.pos_threshold = 1e-4
         self.ori_threshold = 1e-4
 
-        self.max_iters = 1
+        self.max_iters = 20
 
         self.frequency = 100.0 
         self.rate_limiter = RateLimiter(frequency=self.frequency, warn=False)
@@ -236,7 +260,12 @@ class MujocoSim:
             # IK solving
             for _ in range(self.max_iters):
                 vel = mink.solve_ik(
-                    self.configuration, self.tasks, 1 / self.frequency, self.solver, 1e-3
+                    self.configuration,
+                    self.tasks,
+                    1 / self.frequency,
+                    self.solver,
+                    1e-3,
+                    limits=self.limits 
                 )
                 self.configuration.integrate_inplace(vel, 1 / self.frequency)
                 err = self.end_effector_task.compute_error(self.configuration)
@@ -407,10 +436,8 @@ if __name__ == '__main__':
 
             random_pos = 0.1 * np.random.rand(3) + np.array([0.55, 0.0, 0.4])
             random_quat = np.random.rand(4)
-            random_quat /= np.linalg.norm(random_quat)
             random_gripper_pos = np.random.rand(1)
-
-            for _ in range(30):
+            for _ in range(100):
                 action = {
                     'base_pose': np.zeros(3), # No base pos, handled by WBC
                     'arm_pos': random_pos + np.random.uniform(-0.05, 0.05, 3), 
