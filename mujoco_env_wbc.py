@@ -7,18 +7,16 @@
 
 import math
 import multiprocessing as mp
-from multiprocessing import shared_memory
-import random
 import time
+from multiprocessing import shared_memory
 from threading import Thread
 import cv2 as cv
 import mujoco
 import mujoco.viewer
 import numpy as np
-from loop_rate_limiters import RateLimiter
-from scipy.spatial.transform import Rotation as R
-import mink
+from ruckig import InputParameter, OutputParameter, Result, Ruckig
 from constants import POLICY_CONTROL_PERIOD
+from wbc_ik_solver import IKSolver
 
 class ShmState:
     def __init__(self, existing_instance=None):
@@ -96,37 +94,101 @@ class Renderer:
         self.mjr_context = None
 
 class BaseController:
-    def __init__(self, qpos, qvel, ctrl):
+    def __init__(self, qpos, qvel, ctrl, timestep):
         self.qpos = qpos
         self.qvel = qvel
         self.ctrl = ctrl
 
+        num_dofs = 3
+        self.last_command_time = None
+        self.otg = Ruckig(num_dofs, timestep)
+        self.otg_inp = InputParameter(num_dofs)
+        self.otg_out = OutputParameter(num_dofs)
+        self.otg_inp.max_velocity = [0.5, 0.5, 3.14]
+        self.otg_inp.max_acceleration = [0.5, 0.5, 2.36]
+        self.otg_res = None
+
     def reset(self):
-        # Initialize base at origin
         self.qpos[:] = np.zeros(3)
         self.ctrl[:] = self.qpos
 
-    def control_callback(self, base_pose):
-        self.ctrl[:] = base_pose
+        self.last_command_time = time.time()
+        self.otg_inp.current_position = self.qpos
+        self.otg_inp.current_velocity = self.qvel
+        self.otg_inp.target_position = self.qpos
+        self.otg_res = Result.Finished
+
+    def control_callback(self, command):
+        if command is not None:
+            self.last_command_time = time.time()
+            if 'base_pose' in command:
+                # Set target base qpos
+                self.otg_inp.target_position = command['base_pose']
+                self.otg_res = Result.Working
+
+        # Maintain current pose if command stream is disrupted
+        if time.time() - self.last_command_time > 2.5 * POLICY_CONTROL_PERIOD:
+            self.otg_inp.target_position = self.qpos
+            self.otg_res = Result.Working
+
+        # Update OTG
+        if self.otg_res == Result.Working:
+            self.otg_res = self.otg.update(self.otg_inp, self.otg_out)
+            self.otg_out.pass_to_input(self.otg_inp)
+            self.ctrl[:] = self.otg_out.new_position
 
 class ArmController:
-    def __init__(self, qpos, qvel, ctrl, qpos_gripper, ctrl_gripper):
+    def __init__(self, qpos, qvel, ctrl, qpos_gripper, ctrl_gripper, timestep):
         self.qpos = qpos
         self.qvel = qvel
         self.ctrl = ctrl
         self.qpos_gripper = qpos_gripper
         self.ctrl_gripper = ctrl_gripper
 
+        self.ik_solver = IKSolver()
+
+        num_dofs = 7
+        self.last_command_time = None
+        self.otg = Ruckig(num_dofs, timestep)
+        self.otg_inp = InputParameter(num_dofs)
+        self.otg_out = OutputParameter(num_dofs)
+        self.otg_inp.max_velocity = 4 * [math.radians(80)] + 3 * [math.radians(140)]
+        self.otg_inp.max_acceleration = 4 * [math.radians(240)] + 3 * [math.radians(450)]
+        self.otg_res = None
+
     def reset(self):
-        # Initialize arm in "retract" configuration
-        self.qpos[:] = np.array([0.0, -0.34906585, 3.14159265, -2.54818071, 0.0, -0.87266463, 1.57079633]) # retract
-        #self.qpos[:] = np.array([0.0, 0.26179939, 3.14159265, -2.26892803, 0.0, 0.95993109, 1.57079633]) # home
+        retract_qpos = np.array([0.0, -0.349, 3.141, -2.548, 0.0, -0.872, 1.570])
+        self.qpos[:] = retract_qpos
         self.ctrl[:] = self.qpos
         self.ctrl_gripper[:] = 0.0
 
-    def control_callback(self, qpos, gripper_pos):
-        self.ctrl_gripper[:] = 255.0 * gripper_pos  # fingers_actuator, ctrlrange [0, 255]
-        self.ctrl[:] = qpos
+        self.last_command_time = time.time()
+        self.otg_inp.current_position = self.qpos
+        self.otg_inp.current_velocity = self.qvel
+        self.otg_inp.target_position = self.qpos
+        self.otg_res = Result.Finished
+
+    def control_callback(self, command):
+        if command is not None:
+            self.last_command_time = time.time()
+
+            if 'arm_qpos' in command:
+                # Set target arm qpos
+                self.otg_inp.target_position = command['arm_qpos']
+                self.otg_res = Result.Working
+
+            if 'gripper_pos' in command:
+                self.ctrl_gripper[:] = 255.0 * command['gripper_pos']
+
+        if time.time() - self.last_command_time > 2.5 * POLICY_CONTROL_PERIOD:
+            self.otg_inp.target_position = self.otg_out.new_position
+            self.otg_res = Result.Working
+
+        if self.otg_res == Result.Working:
+            self.otg_res = self.otg.update(self.otg_inp, self.otg_out)
+            self.otg_out.pass_to_input(self.otg_inp)
+            self.ctrl[:] = self.otg_out.new_position
+
 
 class MujocoSim:
     def __init__(self, mjcf_path, command_queue, shm_state, show_viewer=True):
@@ -136,29 +198,27 @@ class MujocoSim:
         self.show_viewer = show_viewer
 
         self.model.body_gravcomp[:] = 1.0
+
         body_names = {self.model.body(i).name for i in range(self.model.nbody)}
         for object_name in ['cube']:
             if object_name in body_names:
                 self.model.body_gravcomp[self.model.body(object_name).id] = 0.0
 
-        # Cache references to array slices
         self.base_dofs = base_dofs = self.model.body('base_link').jntnum.item()
         self.arm_dofs = arm_dofs = 7
         self.qpos_base = self.data.qpos[:base_dofs]
         qvel_base = self.data.qvel[:base_dofs]
         ctrl_base = self.data.ctrl[:base_dofs]
-        qpos_arm = self.data.qpos[base_dofs:(base_dofs + arm_dofs)]
+        self.qpos_arm = self.data.qpos[base_dofs:(base_dofs + arm_dofs)]
         qvel_arm = self.data.qvel[base_dofs:(base_dofs + arm_dofs)]
         ctrl_arm = self.data.ctrl[base_dofs:(base_dofs + arm_dofs)]
         self.qpos_gripper = self.data.qpos[(base_dofs + arm_dofs):(base_dofs + arm_dofs + 1)]
         ctrl_gripper = self.data.ctrl[(base_dofs + arm_dofs):(base_dofs + arm_dofs + 1)]
         self.qpos_cube = self.data.qpos[(base_dofs + arm_dofs + 8):(base_dofs + arm_dofs + 8 + 7)]  # 8 for gripper qpos, 7 for cube qpos
 
-        # Controllers
-        self.base_controller = BaseController(self.qpos_base, qvel_base, ctrl_base)
-        self.arm_controller = ArmController(qpos_arm, qvel_arm, ctrl_arm, self.qpos_gripper, ctrl_gripper)
+        self.base_controller = BaseController(self.qpos_base, qvel_base, ctrl_base, self.model.opt.timestep)
+        self.arm_controller = ArmController(self.qpos_arm, qvel_arm, ctrl_arm, self.qpos_gripper, ctrl_gripper, self.model.opt.timestep)
 
-        # Shared memory state for observations
         self.shm_state = ShmState(existing_instance=shm_state)
 
         # Variables for calculating arm pos and quat
@@ -170,61 +230,13 @@ class MujocoSim:
         self.base_rot_axis = np.array([0.0, 0.0, 1.0])
         self.base_quat_inv = np.empty(4)
 
-        # Tasks and solver setup
-        self.configuration = mink.Configuration(self.model)
-        self.end_effector_task = mink.FrameTask(
-            frame_name="pinch_site",
-            frame_type="site",
-            position_cost=1.0,
-            orientation_cost=1.0,
-            lm_damping=1.0,
-        )
-
-        # Base and arm velocity limits
-        self.max_base_velocity = np.array([0.5, 0.5, np.pi/2])  # (x, y, yaw)
-        self.max_arm_velocity = np.array([math.radians(80)] * 4 + [math.radians(140)] * 3)
-        
-        # Create a dictionary mapping joint names to velocity limits
-        joint_names = [
-            "joint_x",
-            "joint_y",
-            "joint_th",
-            "joint_1",
-            "joint_2",
-            "joint_3",
-            "joint_4",
-            "joint_5",
-            "joint_6",
-            "joint_7",
-        ]
-        velocity_limits = {name: limit for name, limit in zip(joint_names, np.concatenate([self.max_base_velocity, self.max_arm_velocity]))}
-        self.velocity_limit = mink.VelocityLimit(self.model, velocity_limits)
-        self.position_limit = mink.ConfigurationLimit(self.model)
-
-        self.limits = [self.velocity_limit, self.position_limit]
-
-        self.posture_cost = np.zeros((self.model.nv,))
-        self.posture_cost[3:] = 1e-3
-        self.posture_task = mink.PostureTask(self.model, cost=self.posture_cost)
-
-        self.tasks = [self.end_effector_task, self.posture_task]
-        self.solver = "quadprog"
-        self.pos_threshold = 1e-4
-        self.ori_threshold = 1e-4
-
-        self.max_iters = 20
-
-        self.frequency = 100.0 
-        self.rate_limiter = RateLimiter(frequency=self.frequency, warn=False)
-
-        # Reset the environment
         self.reset()
 
-        # Set control callback
+        self.last_command = None
+
         mujoco.set_mjcb_control(self.control_callback)
 
     def reset(self):
-        # Reset simulation
         mujoco.mj_resetData(self.model, self.data)
 
         # Reset cube
@@ -233,63 +245,33 @@ class MujocoSim:
         self.qpos_cube[3:7] = np.array([math.cos(theta / 2), 0, 0, math.sin(theta / 2)])
         mujoco.mj_forward(self.model, self.data)
 
-        # Reset controllers
         self.base_controller.reset()
         self.arm_controller.reset()
 
-        self.configuration.update(self.data.qpos)
-        self.posture_task.set_target_from_configuration(self.configuration)
+        self.arm_controller.ik_solver.configuration.update(self.data.qpos[:-7])
 
     def control_callback(self, *_):
-        # Check for new command
         command = None if self.command_queue.empty() else self.command_queue.get()
-
         if command == 'reset':
             self.reset()
 
-        elif command is not None:
-            command['base_pose'] = np.zeros(3) # For WBC
-           
-            T_wt = np.eye(4)
-            T_wt[:3,:3] = R.from_quat(command["arm_quat"]).as_matrix()
-            T_wt[:3, 3] = command["arm_pos"]
-            T_wt = mink.SE3.from_matrix(T_wt)
+        if command is not None and 'arm_pos' in command:
+            full_qpos = self.arm_controller.ik_solver.solve(
+                command['arm_pos'], command['arm_quat'], np.hstack([self.qpos_base, self.qpos_arm, np.zeros(8)])
+            )
 
-            self.end_effector_task.set_target(T_wt)
+            # Distribute to base and arm controllers
+            command['base_pose'] = full_qpos[:3]
+            command['arm_qpos'] = full_qpos[3:10]
+            self.last_command = command
 
-            # IK solving
-            for _ in range(self.max_iters):
-                vel = mink.solve_ik(
-                    self.configuration,
-                    self.tasks,
-                    1 / self.frequency,
-                    self.solver,
-                    1e-3,
-                    limits=self.limits 
-                )
-                self.configuration.integrate_inplace(vel, 1 / self.frequency)
-                err = self.end_effector_task.compute_error(self.configuration)
-                if (
-                    np.linalg.norm(err[:3]) <= self.pos_threshold
-                    and np.linalg.norm(err[3:]) <= self.ori_threshold
-                ):
-                    break
-
-            # Apply controls
-            arm_action = self.configuration.q[self.base_dofs:(self.base_dofs + self.arm_dofs)]
-            base_action = self.configuration.q[:self.base_dofs]
-            gripper_action = 1 if (command is None) else command["gripper_pos"]
-
-            # Control callbacks
-            self.base_controller.control_callback(base_action)
-            self.arm_controller.control_callback(arm_action, gripper_action)
-
-        self.rate_limiter.sleep()
+        self.base_controller.control_callback(command)
+        self.arm_controller.control_callback(command)
 
         # Update base pose
         self.shm_state.base_pose[:] = self.qpos_base
 
-        ## Update arm pos
+        # Update arm pos
         # self.shm_state.arm_pos[:] = self.site_xpos
         site_xpos = self.site_xpos.copy()
         site_xpos[2] -= self.base_height  # Base height offset
@@ -311,9 +293,7 @@ class MujocoSim:
     def launch(self):
         if self.show_viewer:
             mujoco.viewer.launch(self.model, self.data, show_left_ui=False, show_right_ui=False)
-
         else:
-            # Run headless simulation at real-time speed
             last_step_time = 0
             while True:
                 while time.time() - last_step_time < self.model.opt.timestep:
@@ -323,7 +303,7 @@ class MujocoSim:
 
 class MujocoEnv:
     def __init__(self, render_images=True, show_viewer=True, show_images=False):
-        self.mjcf_path = 'models/stanford_tidybot/scene_wbc.xml'
+        self.mjcf_path = 'models/stanford_tidybot/scene.xml'
         self.render_images = render_images
         self.show_viewer = show_viewer
         self.show_images = show_images
@@ -399,7 +379,6 @@ class MujocoEnv:
 
     def get_obs(self):
         arm_quat = self.shm_state.arm_quat[[1, 2, 3, 0]]  # (w, x, y, z) -> (x, y, z, w)
-
         if arm_quat[3] < 0.0:  # Enforce quaternion uniqueness
             np.negative(arm_quat, out=arm_quat)
         obs = {
@@ -432,20 +411,20 @@ if __name__ == '__main__':
     try:
         while True:
             env.reset()
-            obs = env.get_obs()
+            random_pos = 0.1 * np.random.rand(3) + np.array([0.55, 0, 0.4])
+            random_quat = np.random.uniform(-0.2, 0.2, 4) + [np.sqrt(2)/2, np.sqrt(2)/2, 0.0, 0.0]
+            random_quat = random_quat/np.linalg.norm(random_quat)
 
-            random_pos = 0.1 * np.random.rand(3) + np.array([0.55, 0.0, 0.4])
-            random_quat = np.random.rand(4)
-            random_gripper_pos = np.random.rand(1)
-            for _ in range(100):
+            for _ in range(30):
                 action = {
                     'base_pose': np.zeros(3), # No base pos, handled by WBC
                     'arm_pos': random_pos + np.random.uniform(-0.05, 0.05, 3), 
                     'arm_quat': random_quat,
-                    'gripper_pos': random_gripper_pos,
+                    'gripper_pos': np.random.rand(1)
                 }
                 env.step(action)
                 obs = env.get_obs()
+                
                 #print([(k, v.shape) if v.ndim == 3 else (k, v) for (k, v) in obs.items()])
                 time.sleep(POLICY_CONTROL_PERIOD)  # Note: Not precise
     finally:
