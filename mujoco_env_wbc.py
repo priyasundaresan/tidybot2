@@ -201,9 +201,6 @@ class MujocoSim:
         self.model.body_gravcomp[:] = 1.0
 
         body_names = {self.model.body(i).name for i in range(self.model.nbody)}
-        for object_name in ['cube']:
-            if object_name in body_names:
-                self.model.body_gravcomp[self.model.body(object_name).id] = 0.0
 
         self.base_dofs = base_dofs = self.model.body('base_link').jntnum.item()
         self.arm_dofs = arm_dofs = 7
@@ -215,7 +212,6 @@ class MujocoSim:
         ctrl_arm = self.data.ctrl[base_dofs:(base_dofs + arm_dofs)]
         self.qpos_gripper = self.data.qpos[(base_dofs + arm_dofs):(base_dofs + arm_dofs + 1)]
         ctrl_gripper = self.data.ctrl[(base_dofs + arm_dofs):(base_dofs + arm_dofs + 1)]
-        self.qpos_cube = self.data.qpos[(base_dofs + arm_dofs + 8):(base_dofs + arm_dofs + 8 + 7)]  # 8 for gripper qpos, 7 for cube qpos
 
         self.base_controller = BaseController(self.qpos_base, qvel_base, ctrl_base, self.model.opt.timestep)
         self.arm_controller = ArmController(self.qpos_arm, qvel_arm, ctrl_arm, self.qpos_gripper, ctrl_gripper, self.model.opt.timestep)
@@ -238,17 +234,12 @@ class MujocoSim:
 
     def reset(self):
         mujoco.mj_resetData(self.model, self.data)
-
-        # Reset cube
-        self.qpos_cube[:2] += np.random.uniform(-0.1, 0.1, 2)
-        theta = np.random.uniform(-math.pi, math.pi)
-        self.qpos_cube[3:7] = np.array([math.cos(theta / 2), 0, 0, math.sin(theta / 2)])
         mujoco.mj_forward(self.model, self.data)
 
         self.base_controller.reset()
         self.arm_controller.reset()
 
-        self.wbc_ik_solver.configuration.update(self.data.qpos[:-7])
+        self.wbc_ik_solver.configuration.update(self.data.qpos)
 
     def control_callback(self, *_):
         command = None if self.command_queue.empty() else self.command_queue.get()
@@ -302,7 +293,7 @@ class MujocoSim:
 
 class MujocoEnv:
     def __init__(self, render_images=True, show_viewer=True, show_images=False):
-        self.mjcf_path = 'models/stanford_tidybot/scene.xml'
+        self.mjcf_path = 'models/stanford_tidybot2/scene.xml'
         self.render_images = render_images
         self.show_viewer = show_viewer
         self.show_images = show_images

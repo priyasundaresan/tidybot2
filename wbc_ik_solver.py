@@ -6,7 +6,7 @@ from scipy.spatial.transform import Rotation as R
 
 class IKSolver:
     def __init__(self):
-        self.model = mujoco.MjModel.from_xml_path('models/stanford_tidybot/tidybot_wbc.xml')
+        self.model = mujoco.MjModel.from_xml_path('models/stanford_tidybot2/tidybot.xml')
         self.data = mujoco.MjData(self.model)
 
         self.model.body_gravcomp[:] = 1.0  # Enable gravity compensation for all bodies
