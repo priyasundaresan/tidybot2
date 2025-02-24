@@ -312,7 +312,7 @@ class MujocoSim:
 
 class MujocoEnv:
     def __init__(self, render_images=True, show_viewer=True, show_images=False):
-        self.mjcf_path = 'models/stanford_tidybot2/scene.xml'
+        self.mjcf_path = 'models/stanford_tidybot/scene.xml'
         self.render_images = render_images
         self.show_viewer = show_viewer
         self.show_images = show_images
@@ -426,7 +426,7 @@ if __name__ == '__main__':
 
             for _ in range(30):
                 action = {
-                    'base_pose': np.zeros(3), # No base pos, handled by WBC
+                    'base_pose': 0.1 * np.random.rand(3) - 0.05, # No base pos, handled by WBC
                     'arm_pos': random_pos + np.random.uniform(-0.05, 0.05, 3), 
                     'arm_quat': random_quat,
                     'gripper_pos': np.random.rand(1)
