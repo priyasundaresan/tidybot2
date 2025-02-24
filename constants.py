@@ -21,7 +21,7 @@ ARM_RPC_PORT = 50001
 RPC_AUTHKEY = b'secret password'
 
 # Cameras
-BASE_CAMERA_SERIAL = 'TODO'
+BASE_CAMERA_SERIAL = 'DDCD281E'
 # WRIST_CAMERA_SERIAL = 'TODO'  # Not used by Kinova wrist camera
 
 # Policy
