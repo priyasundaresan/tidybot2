@@ -84,6 +84,7 @@ class TeleopController:
 
         # Teleop targets
         self.targets_initialized = False
+        self.teleop_mode = None
         self.base_target_pose = None
         self.arm_target_pos = None
         self.arm_target_rot = None
@@ -131,6 +132,7 @@ class TeleopController:
         # Teleop is enabled
         if self.primary_device_id is not None and 'teleop_mode' in data:
             pos, rot = convert_webxr_pose(data['position'], data['orientation'])
+            self.teleop_mode = data['teleop_mode']
 
             # Base movement
             if data['teleop_mode'] == 'base' or device_id == self.secondary_device_id:  # Note: Secondary device can only control base
@@ -203,6 +205,7 @@ class TeleopController:
             np.negative(arm_quat, out=arm_quat)
         action = {
             'base_pose': self.base_target_pose.copy(),
+            'teleop_mode': self.teleop_mode,
             'arm_pos': self.arm_target_pos.copy(),
             'arm_quat': arm_quat,
             'gripper_pos': self.gripper_target_pos.copy(),

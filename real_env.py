@@ -50,7 +50,6 @@ class RealEnv:
 
     def step(self, action):
         # Note: We intentionally do not return obs here to prevent the policy from using outdated data
-        print(action['base_pose'].round(2))
         self.base.execute_action(action)  # Non-blocking
         self.arm.execute_action(action)   # Non-blocking
 

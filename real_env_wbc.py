@@ -59,19 +59,20 @@ class RealEnv:
         qpos_base = self.base.get_state()['base_pose']
         qpos_arm = self.arm.get_qpos()
 
-        action_qpos = self.wbc_ik_solver.solve(action['arm_pos'], \
-                                               action['arm_quat'], \
-                                               np.hstack([qpos_base, qpos_arm, np.zeros(8)]))
+        if True:
+        #if action['teleop_mode'] == 'arm':
+            action_qpos = self.wbc_ik_solver.solve(action['arm_pos'], \
+                                                   action['arm_quat'], \
+                                                   np.hstack([qpos_base, qpos_arm, np.zeros(8)]))
 
-        action_base_pose = action_qpos[:3]
+            action_base_pose = action_qpos[:3]
+            action_arm_qpos = action_qpos[3:10]
+            action_arm_qpos = action_arm_qpos % (2 * np.pi) # Unwrapping
+            action['base_pose'] = action_base_pose
+            action['arm_qpos'] = action_arm_qpos
 
-        action_arm_qpos = action_qpos[3:10]
-        action_arm_qpos = action_arm_qpos % (2 * np.pi) # Unwrapping
-
-        action['base_pose'] = action_base_pose
-        action['arm_qpos'] = action_arm_qpos
-
-        print(action['base_pose'], action['arm_qpos'])
+        #else: # action['teleop_mode'] = 'base'
+        #    action['arm_qpos'] = qpos_arm % (2 * np.pi)
 
         self.base.execute_action(action)  # Non-blocking
         self.arm.execute_action(action)   # Non-blocking
