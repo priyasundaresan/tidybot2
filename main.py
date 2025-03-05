@@ -92,7 +92,10 @@ def main(args):
         else:
             env = MujocoEnv()
     else:
-        from real_env import RealEnv
+        if args.wbc:
+            from real_env_wbc import RealEnv
+        else:
+            from real_env import RealEnv
         env = RealEnv()
 
     # Create policy

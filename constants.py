@@ -8,7 +8,7 @@ h_x, h_y = 0.190150 * np.array([1.0, 1.0, -1.0, -1.0]), 0.170150 * np.array([-1.
 # h_x, h_y = 0.140150 * np.array([1.0, 1.0, -1.0, -1.0]), 0.120150 * np.array([-1.0, 1.0, 1.0, -1.0])  # ARX5
 
 # Encoder magnet offsets
-ENCODER_MAGNET_OFFSETS = [0.0 / 4096, 0.0 / 4096, 0.0 / 4096, 0.0 / 4096]  # TODO
+ENCODER_MAGNET_OFFSETS = [1465.0 / 4096, 175.0 / 4096, 1295.0 / 4096, 1595.0 / 4096]  # Base #1 (IPRL Kinova)
 
 ################################################################################
 # Teleop and imitation learning

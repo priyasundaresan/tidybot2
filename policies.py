@@ -54,8 +54,8 @@ class WebServer:
             address = '127.0.0.1'
         finally:
             s.close()
-        print(f'Starting server at {address}:5001')
-        self.socketio.run(self.app, host='0.0.0.0', port=5001)
+        print(f'Starting server at {address}:5000')
+        self.socketio.run(self.app, host='0.0.0.0')
 
 DEVICE_CAMERA_OFFSET = np.array([0.0, 0.02, -0.04])  # iPhone 14 Pro
 

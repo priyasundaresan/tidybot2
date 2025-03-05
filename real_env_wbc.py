@@ -4,8 +4,11 @@
 from cameras import KinovaCamera, LogitechCamera
 from constants import BASE_RPC_HOST, BASE_RPC_PORT, ARM_RPC_HOST, ARM_RPC_PORT, RPC_AUTHKEY
 from constants import BASE_CAMERA_SERIAL
-from arm_server import ArmManager
+from arm_server_wbc import ArmManager
 from base_server import BaseManager
+#from wbc_ik_solver import IKSolver
+from wbc_ik_solver_2 import IKSolver
+import numpy as np
 
 class RealEnv:
     def __init__(self):
@@ -31,6 +34,9 @@ class RealEnv:
         self.base_camera = LogitechCamera(BASE_CAMERA_SERIAL)
         self.wrist_camera = KinovaCamera()
 
+        self.wbc_ik_solver = IKSolver()
+        self.RESET_QPOS = np.array([0., 0., 0., 0., -0.34906585, 3.14159265, -2.54818071, 0., -0.87266463, 1.57079633, 0., 0., 0., 0., 0., 0., 0., 0.])
+
     def get_obs(self):
         obs = {}
         obs.update(self.base.get_state())
@@ -46,11 +52,27 @@ class RealEnv:
         print('Resetting arm...')
         self.arm.reset()
 
+        self.wbc_ik_solver.configuration.update(self.RESET_QPOS)
         print('Robot has been reset')
 
     def step(self, action):
-        # Note: We intentionally do not return obs here to prevent the policy from using outdated data
-        print(action['base_pose'].round(2))
+        qpos_base = self.base.get_state()['base_pose']
+        qpos_arm = self.arm.get_qpos()
+
+        action_qpos = self.wbc_ik_solver.solve(action['arm_pos'], \
+                                               action['arm_quat'], \
+                                               np.hstack([qpos_base, qpos_arm, np.zeros(8)]))
+
+        action_base_pose = action_qpos[:3]
+
+        action_arm_qpos = action_qpos[3:10]
+        action_arm_qpos = action_arm_qpos % (2 * np.pi) # Unwrapping
+
+        action['base_pose'] = action_base_pose
+        action['arm_qpos'] = action_arm_qpos
+
+        print(action['base_pose'], action['arm_qpos'])
+
         self.base.execute_action(action)  # Non-blocking
         self.arm.execute_action(action)   # Non-blocking
 

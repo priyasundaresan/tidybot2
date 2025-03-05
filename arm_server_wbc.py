@@ -14,7 +14,6 @@ from multiprocessing.managers import BaseManager as MPBaseManager
 import numpy as np
 from arm_controller import JointCompliantController
 from constants import ARM_RPC_HOST, ARM_RPC_PORT, RPC_AUTHKEY
-from ik_solver import IKSolver
 from kinova import TorqueControlledArm
 
 class Arm:
@@ -23,7 +22,6 @@ class Arm:
         self.arm.set_joint_limits(speed_limits=(7 * (30,)), acceleration_limits=(7 * (80,)))
         self.command_queue = queue.Queue(1)
         self.controller = None
-        self.ik_solver = IKSolver(ee_offset=0.12)
 
     def reset(self):
         # Stop low-level control
@@ -47,7 +45,7 @@ class Arm:
             time.sleep(0.01)
 
     def execute_action(self, action):
-        qpos = self.ik_solver.solve(action['arm_pos'], action['arm_quat'], self.arm.q)
+        qpos = action['arm_qpos']
         self.command_queue.put((qpos, action['gripper_pos'].item()))
 
     def get_qpos(self):
