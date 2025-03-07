@@ -54,7 +54,7 @@ def run_episode(env, policy, writer=None):
 
         # Execute valid action on robot
         if isinstance(action, dict):
-            print(obs['arm_pos'], action['arm_pos'])
+            #print(obs['base_pose'], action['base_pose'])
             env.step(action)
 
             if writer is not None and not episode_ended:

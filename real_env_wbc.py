@@ -6,8 +6,8 @@ from constants import BASE_RPC_HOST, BASE_RPC_PORT, ARM_RPC_HOST, ARM_RPC_PORT, 
 from constants import BASE_CAMERA_SERIAL
 from arm_server_wbc import ArmManager
 from base_server import BaseManager
-#from wbc_ik_solver import IKSolver
-from wbc_ik_solver_2 import IKSolver
+from wbc_ik_solver import IKSolver
+from scipy.spatial.transform import Rotation as R
 import numpy as np
 
 class RealEnv:
@@ -37,6 +37,8 @@ class RealEnv:
         self.wbc_ik_solver = IKSolver()
         self.RESET_QPOS = np.array([0., 0., 0., 0., -0.34906585, 3.14159265, -2.54818071, 0., -0.87266463, 1.57079633, 0., 0., 0., 0., 0., 0., 0., 0.])
 
+        self.arm_base_offset = [0.1199, 0, 0.3948] # arm is forward (0.1199m) and raised by base height (0.3948m)
+
     def get_obs(self):
         obs = {}
         obs.update(self.base.get_state())
@@ -59,20 +61,25 @@ class RealEnv:
         qpos_base = self.base.get_state()['base_pose']
         qpos_arm = self.arm.get_qpos()
 
-        if True:
         #if action['teleop_mode'] == 'arm':
+        if 'arm_pos' in action:
+            T_action = np.eye(4)
+            T_action[:3, :3] = R.from_euler('z', qpos_base[2]).as_matrix()
+            T_action[:3, 3] = np.array([qpos_base[0], qpos_base[1], 0]) + self.arm_base_offset
+            arm_pos_adjusted = T_action@np.array([action['arm_pos'][0], action['arm_pos'][1], action['arm_pos'][2], 1.0])
+            arm_pos_adjusted = arm_pos_adjusted[:3]
+            action['arm_pos'] = arm_pos_adjusted
+
             action_qpos = self.wbc_ik_solver.solve(action['arm_pos'], \
                                                    action['arm_quat'], \
                                                    np.hstack([qpos_base, qpos_arm, np.zeros(8)]))
-
             action_base_pose = action_qpos[:3]
             action_arm_qpos = action_qpos[3:10]
             action_arm_qpos = action_arm_qpos % (2 * np.pi) # Unwrapping
             action['base_pose'] = action_base_pose
             action['arm_qpos'] = action_arm_qpos
 
-        #else: # action['teleop_mode'] = 'base'
-        #    action['arm_qpos'] = qpos_arm % (2 * np.pi)
+        print(action['base_pose'].round(2), action['arm_qpos'].round(2))
 
         self.base.execute_action(action)  # Non-blocking
         self.arm.execute_action(action)   # Non-blocking
@@ -88,19 +95,3 @@ if __name__ == '__main__':
     import numpy as np
     from constants import POLICY_CONTROL_PERIOD
     env = RealEnv()
-    try:
-        while True:
-            env.reset()
-            for _ in range(100):
-                action = {
-                    'base_pose': 0.1 * np.random.rand(3) - 0.05,
-                    'arm_pos': 0.1 * np.random.rand(3) + np.array([0.55, 0.0, 0.4]),
-                    'arm_quat': np.random.rand(4),
-                    'gripper_pos': np.random.rand(1),
-                }
-                env.step(action)
-                obs = env.get_obs()
-                print([(k, v.shape) if v.ndim == 3 else (k, v) for (k, v) in obs.items()])
-                time.sleep(POLICY_CONTROL_PERIOD)  # Note: Not precise
-    finally:
-        env.close()

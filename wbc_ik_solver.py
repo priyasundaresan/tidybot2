@@ -53,8 +53,13 @@ class IKSolver:
 
         # Posture Task (Encourages retraction-like configurations)
         self.posture_cost = np.zeros((self.model.nv,))
-        self.posture_cost[3:] = 1e-3  # Encourage default posture
+        #self.posture_cost[3:] = 1e-3  # Encourage default posture
+        self.posture_cost[3:] = 2e-3  # Encourage default posture
         self.posture_task = mink.PostureTask(self.model, cost=self.posture_cost)
+
+        immobile_base_cost = np.zeros((self.model.nv,))
+        immobile_base_cost[:3] = 1.5 
+        self.damping_task = mink.DampingTask(self.model, immobile_base_cost)
 
         self.retract_configuration = mink.Configuration(self.model)
         RETRACT_QPOS = np.array([0.0, -0.34906585, 3.14159265, -2.54818071, 0.0, -0.87266463, 1.57079633])
@@ -89,7 +94,7 @@ class IKSolver:
             # Solve IK to get joint velocity update
             vel = mink.solve_ik(
                 self.configuration,
-                self.tasks,  # Includes posture task
+                [*self.tasks, self.damping_task],  # Includes posture task
                 1 / self.frequency,
                 self.solver,
                 1e-3,

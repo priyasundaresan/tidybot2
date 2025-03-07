@@ -14,9 +14,11 @@ ENCODER_MAGNET_OFFSETS = [1465.0 / 4096, 175.0 / 4096, 1295.0 / 4096, 1595.0 / 4
 # Teleop and imitation learning
 
 # Base and arm RPC servers
-BASE_RPC_HOST = 'localhost'
+#BASE_RPC_HOST = 'localhost'
+BASE_RPC_HOST = '10.5.97.77'
 BASE_RPC_PORT = 50000
-ARM_RPC_HOST = 'localhost'
+#ARM_RPC_HOST = 'localhost'
+ARM_RPC_HOST = '10.5.97.77'
 ARM_RPC_PORT = 50001
 RPC_AUTHKEY = b'secret password'
 
