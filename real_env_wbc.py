@@ -61,7 +61,6 @@ class RealEnv:
         qpos_base = self.base.get_state()['base_pose']
         qpos_arm = self.arm.get_qpos()
 
-        #if action['teleop_mode'] == 'arm':
         if 'arm_pos' in action:
             T_action = np.eye(4)
             T_action[:3, :3] = R.from_euler('z', qpos_base[2]).as_matrix()
@@ -79,7 +78,7 @@ class RealEnv:
             action['base_pose'] = action_base_pose
             action['arm_qpos'] = action_arm_qpos
 
-        print(action['base_pose'].round(2), action['arm_qpos'].round(2))
+        #print(action['base_pose'].round(2), action['arm_qpos'].round(2))
 
         self.base.execute_action(action)  # Non-blocking
         self.arm.execute_action(action)   # Non-blocking
