@@ -6,7 +6,7 @@ from scipy.spatial.transform import Rotation as R
 
 class IKSolver:
     def __init__(self):
-        self.model = mujoco.MjModel.from_xml_path('models/stanford_tidybot2/tidybot.xml')
+        self.model = mujoco.MjModel.from_xml_path('models/stanford_tidybot2/tidybot_cam_mounts.xml')
         self.data = mujoco.MjData(self.model)
 
         self.model.body_gravcomp[:] = 1.0  # Enable gravity compensation for all bodies
@@ -20,6 +20,31 @@ class IKSolver:
 
         # WBC Configuration and Tasks
         self.configuration = mink.Configuration(self.model)
+
+        ### Self-collision avoidance
+        arm_geoms = mink.get_subtree_geom_ids(self.model, self.model.body("gen3/base_link").id)
+        base_geoms = mink.get_body_geom_ids(self.model, self.model.body("base_link").id)
+        gripper_geoms = mink.get_body_geom_ids(self.model, self.model.body("base").id)  # Gripper base
+
+        gripper_finger_geoms = []
+        for finger in ["right_driver", "right_follower", "left_driver", "left_follower"]:
+            gripper_finger_geoms.extend(mink.get_body_geom_ids(self.model, self.model.body(finger).id))
+
+        collision_pairs = [
+            (gripper_geoms, arm_geoms),
+            (gripper_finger_geoms, arm_geoms),
+            (arm_geoms, base_geoms),
+            (gripper_geoms, base_geoms),
+            (gripper_finger_geoms, base_geoms),
+        ]
+
+        self.collision_avoidance_limit = mink.CollisionAvoidanceLimit(
+            model=self.model,
+            geom_pairs=collision_pairs,  # type: ignore
+            minimum_distance_from_collisions=0.05,
+            collision_detection_distance=0.1,
+        )
+        ### 
 
         self.end_effector_task = mink.FrameTask(
             frame_name="pinch_site",
@@ -45,14 +70,20 @@ class IKSolver:
             "joint_6",
             "joint_7",
         ]
-        self.velocity_limits = {name: limit for name, limit in zip(joint_names, np.concatenate([self.max_base_velocity, self.max_arm_velocity]))}
-        self.velocity_limit = mink.VelocityLimit(self.model, self.velocity_limits)
+        velocity_limits = {name: limit for name, limit in zip(joint_names, np.concatenate([self.max_base_velocity, self.max_arm_velocity]))}
+        self.velocity_limit = mink.VelocityLimit(self.model, velocity_limits)
         self.position_limit = mink.ConfigurationLimit(self.model)
+
+        self.limits = [self.velocity_limit, self.position_limit, self.collision_avoidance_limit]
 
         # Posture Task (Encourages retraction-like configurations)
         self.posture_cost = np.zeros((self.model.nv,))
-        self.posture_cost[3:] = 1e-3  # Encourage default posture
+        self.posture_cost[3:] = 2e-3  # Encourage default posture
         self.posture_task = mink.PostureTask(self.model, cost=self.posture_cost)
+
+        immobile_base_cost = np.zeros((self.model.nv,))
+        immobile_base_cost[:3] = 1.5 
+        self.damping_task = mink.DampingTask(self.model, immobile_base_cost)
 
         self.retract_configuration = mink.Configuration(self.model)
         RETRACT_QPOS = np.array([0.0, -0.34906585, 3.14159265, -2.54818071, 0.0, -0.87266463, 1.57079633])
@@ -79,27 +110,19 @@ class IKSolver:
 
         # Set initial joint configuration
         self.data.qpos[:] = curr_qpos
+        #self.configuration.update(curr_qpos) 
    
         mujoco.mj_forward(self.model, self.data)  # Ensure kinematics update
 
-        err = self.end_effector_task.compute_error(self.configuration)
-        curr_velocity_limits = self.velocity_limits.copy()
-        if np.linalg.norm(err[:3]) < 0.005:
-            curr_velocity_limits['joint_x'] = 0
-            curr_velocity_limits['joint_y'] = 0
-            curr_velocity_limits['joint_th'] = 0
-
-        velocity_limit = mink.VelocityLimit(self.model, curr_velocity_limits)
-
         for _ in range(self.max_iters):
-
+            # Solve IK to get joint velocity update
             vel = mink.solve_ik(
                 self.configuration,
-                self.tasks,  # Includes posture task
+                [*self.tasks, self.damping_task],  # Includes posture task
                 1 / self.frequency,
                 self.solver,
                 1e-3,
-                limits=[velocity_limit, self.position_limit]
+                limits=self.limits
             )
 
             # Integrate velocity update into joint positions
@@ -119,8 +142,7 @@ class IKSolver:
 # Test Script
 if __name__ == '__main__':
     ik_solver = IKSolver()
-    #home_pos, home_quat = np.array([0.456, 0.0, 0.434]), np.array([0.5, 0.5, 0.5, 0.5])
-    home_pos, home_quat = np.array([0.456, 0.0, 0.434]), np.array([0.7, 0, 0, 0.7])
+    home_pos, home_quat = np.array([0.456, 0.0, 0.434]), np.array([0.5, 0.5, 0.5, 0.5])
     retract_qpos = np.deg2rad([0, -20, 180, -146, 0, -50, 90])  # Base and arm
     retract_qpos = np.hstack((np.zeros(3), retract_qpos, np.zeros(8)))
 

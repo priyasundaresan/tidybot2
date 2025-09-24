@@ -28,15 +28,15 @@ class RealEnv:
         self.arm = arm_manager.Arm()
 
         # Cameras
-        self.base_camera = LogitechCamera(BASE_CAMERA_SERIAL)
-        self.wrist_camera = KinovaCamera()
+        #self.base_camera = LogitechCamera(BASE_CAMERA_SERIAL)
+        #self.wrist_camera = KinovaCamera()
 
     def get_obs(self):
         obs = {}
         obs.update(self.base.get_state())
         obs.update(self.arm.get_state())
-        obs['base_image'] = self.base_camera.get_image()
-        obs['wrist_image'] = self.wrist_camera.get_image()
+        #obs['base_image'] = self.base_camera.get_image()
+        #obs['wrist_image'] = self.wrist_camera.get_image()
         return obs
 
     def reset(self):
@@ -56,8 +56,8 @@ class RealEnv:
     def close(self):
         self.base.close()
         self.arm.close()
-        self.base_camera.close()
-        self.wrist_camera.close()
+        #self.base_camera.close()
+        #self.wrist_camera.close()
 
 if __name__ == '__main__':
     import time
